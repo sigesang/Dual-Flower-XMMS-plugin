@@ -1,5 +1,5 @@
 /*
-  Dual Flowers 1.0
+  Dual Flowers 1.2.1
  -----------------------
   plugin for XMMS
 
@@ -18,12 +18,12 @@
 #include "dflowers_mini.xpm"
 
 /* #define NO_WIN_DECORATIONS */
-#define THIS_IS "Dual Flowers 1.2pre"
+#define THIS_IS "Dual Flowers 1.2.1"
 
 #define CONFIG_SECTION "Dual Flowes"
 
 /* THEMEDIR at maketime */
-#define THEME_DEFAULT_STR "default"
+#define THEME_DEFAULT_STR ""
 #define THEME_DEFAULT_PATH THEMEDIR
 
 #define FSEL_ALWAYS_DEFAULT_PATH
@@ -41,6 +41,9 @@
 #define ABOUT_WIDTH 300
 #define ABOUT_HEIGHT 150
 
+#define TYPE_REVABS 1
+#define TYPE_NOABS 2
+#define TYPE_ABS 0
 
 extern GtkWidget *mainwin; /* xmms mainwin */
 extern GList *dock_window_list; /* xmms dockwinlist*/
@@ -59,7 +62,6 @@ static GdkBitmap *mask = NULL;
 
 static GdkPixmap *bg_pixmap = NULL;
 static GdkPixmap *pixmap = NULL;
-static gboolean dflower_window_motion = FALSE;
 static GdkColor graphcolor;
 
 static GdkGC *gc = NULL;
@@ -74,24 +76,24 @@ typedef struct {
   gboolean rel_main;
 } DFlowerCfg;
 
-static DFlowerCfg Cfg ={ 0, NULL, 0, 0, 0};
+static DFlowerCfg Cfg ={ TYPE_ABS, NULL, -1, -1, 0};
 
-extern GList *dock_add_window(GList *window_list, GtkWidget *window);
+/* external */
+extern GList *dock_add_window(GList *, GtkWidget *);
+extern gboolean dock_is_moving(GtkWidget *);
+extern void dock_move_motion(GtkWidget *,GdkEventMotion *);
+extern void dock_move_press(GList *, GtkWidget *, GdkEventButton *, gboolean);
+extern void dock_move_release(GtkWidget *);
 
 static void dflower_about ();
 static void dflower_init (void);
 static void dflower_cleanup (void);
-static void dflower_playback_start (void);
-static void dflower_playback_stop (void);
 static void dflower_render_pcm (gint16 data[2][512]);
 static void dflower_config(void);
 static void create_fileselection (void);
 static void dflower_config_read ();
 static void dflower_config_write ();
 static GtkWidget* dflower_create_menu(void);
-
-static gint dflower_move_x;
-static gint dflower_move_y;
 
 VisPlugin dflower_vp = {
 	NULL, NULL, 0,
@@ -103,8 +105,8 @@ VisPlugin dflower_vp = {
 	dflower_about,
 	dflower_config,
 	NULL,
-	dflower_playback_start,
-	dflower_playback_stop,
+	NULL,
+	NULL,
 	dflower_render_pcm,
 	NULL
 };
@@ -125,7 +127,7 @@ static void dflower_set_theme() {
   GdkVisual *visual;
   GdkColormap *cmap;
 
-  if (Cfg.skin_xpm != NULL && strcmp(Cfg.skin_xpm, "default") != 0)
+  if (Cfg.skin_xpm != NULL && strcmp(Cfg.skin_xpm, THEME_DEFAULT_STR) != 0)
     bg_pixmap = gdk_pixmap_create_from_xpm(window->window, &mask, NULL, Cfg.skin_xpm);
   if (bg_pixmap == NULL)
     bg_pixmap = gdk_pixmap_create_from_xpm_d(window->window, &mask, NULL, bg_def_xpm);  
@@ -162,14 +164,13 @@ static gint dflower_mousebtnrel_cb(GtkWidget *widget, GdkEventButton *event,
 				  gpointer data)
 {
   if (event->type == GDK_BUTTON_RELEASE) {
+    if (dock_is_moving(window)) {
+      dock_move_release(window);
+    }
     if (event->button == 1) {
       if ((event->x > (WINWIDTH - TOP_BORDER)) &&
 	 (event->y < TOP_BORDER)) { // topright corner
 	dflower_vp.disable_plugin(&dflower_vp);
-      }
-      if (dflower_window_motion) {
-	gdk_pointer_ungrab(GDK_CURRENT_TIME);
-	dflower_window_motion = FALSE;
       }
     }
   }
@@ -179,30 +180,20 @@ static gint dflower_mousebtnrel_cb(GtkWidget *widget, GdkEventButton *event,
 
 static gint dflower_mousemove_cb(GtkWidget *widget, GdkEventMotion *event, gpointer data)
 {
-  if (dflower_window_motion) {
-    GdkModifierType modmask;
-    gint mouse_x, mouse_y;
-
-    gdk_window_get_pointer(NULL, &mouse_x, &mouse_y, &modmask);
-    gdk_window_move(window->window,  mouse_x - dflower_move_x, mouse_y - dflower_move_y);
+  if (dock_is_moving(window)) {
+    dock_move_motion(window, event);
   }
+
   return TRUE;
 }
 
 static gint dflower_mousebtn_cb(GtkWidget *widget, GdkEventButton *event, gpointer data)
 {
-
-  dflower_move_x = event->x;
-  dflower_move_y = event->y;
-
   if (event->type == GDK_BUTTON_PRESS) {
     if ((event->button == 1) &&
        (event->x < (WINWIDTH - TOP_BORDER)) &&
        (event->y <= TOP_BORDER)) { //topright corner
-      gdk_window_raise(window->window);
-      gdk_pointer_grab(window->window, FALSE, GDK_BUTTON_MOTION_MASK | GDK_BUTTON_RELEASE_MASK,
-		       GDK_NONE, GDK_NONE, GDK_CURRENT_TIME);
-      dflower_window_motion = TRUE;
+      dock_move_press(dock_window_list, window, event, FALSE);
     }
     
     if (event->button == 3) {
@@ -245,7 +236,7 @@ static void dflower_init (void) {
   for (i=0; i<640; i++) {
     sinncos_table[i] = AWIDTH/2 * sin(M_PI/256.0 * (float)i);
   }
-  //create_fileselection();
+
   window = gtk_window_new(GTK_WINDOW_DIALOG);
   gtk_widget_set_app_paintable(window, TRUE);
   gtk_window_set_title(GTK_WINDOW(window), THIS_IS);
@@ -274,12 +265,6 @@ static void dflower_init (void) {
 		     GTK_SIGNAL_FUNC(dflower_mousebtnrel_cb), NULL);
   gtk_signal_connect(GTK_OBJECT(window), "motion_notify_event",
 		     GTK_SIGNAL_FUNC(dflower_mousemove_cb), NULL);
-  /*
-    pixmap_cnl_r = gdk_pixmap_new(window->window, AWIDTH, AHEIGHT,
-    gdk_visual_get_best_depth());
-    pixmap_cnl_l = gdk_pixmap_new(window->window, AWIDTH, AHEIGHT,
-    gdk_visual_get_best_depth());
-  */
 
   gc = gdk_gc_new(window->window);
   gdk_color_black(gdk_colormap_get_system(),&color);
@@ -287,8 +272,6 @@ static void dflower_init (void) {
 
   pixmap = gdk_pixmap_new(window->window, WINWIDTH, WINHEIGHT,
 			  gdk_visual_get_best_depth());
- 
-
 
   drwarea = gtk_drawing_area_new();
   gtk_widget_show(drwarea);
@@ -302,38 +285,23 @@ static void dflower_init (void) {
   gdk_gc_set_foreground(gc, &graphcolor);
 
   gtk_widget_show(window);
+
+  if (!g_list_find(dock_window_list, window)) {
+    dock_add_window(dock_window_list, window);
+  }
 }
 
 static void dflower_cleanup(void) {
   dflower_config_write();
+
+  if (g_list_find(dock_window_list, window)) {
+    g_list_remove(dock_window_list, window); 
+  }
+
   if (win_about) gtk_widget_destroy(win_about);
   if (window) gtk_widget_destroy(window);
   if (gc) gdk_gc_unref(gc);
   if (pixmap) gdk_pixmap_unref(pixmap);
-}
-
-static void dflower_playback_start(void) {
-/*  if (window) {
-    gdk_window_set_back_pixmap(drwarea_cnl_r->window,pixmap_cnl_r,0);
-    gdk_window_clear(drwarea_cnl_r->window);
-    gdk_window_set_back_pixmap(drwarea_cnl_l->window,pixmap_cnl_l,0);
-    gdk_window_clear(drwarea_cnl_l->window);
-    }*/
-}
-
-static void dflower_playback_stop(void) {
-/*  GdkColor color;
-
-  gdk_color_black(gdk_colormap_get_system(),&color);
-  if (GTK_WIDGET_REALIZED(drwarea_cnl_l)) {
-    gdk_window_set_background(drwarea_cnl_l->window, &color);    
-    gdk_window_clear(drwarea_cnl_l->window);
-  }
-  if (GTK_WIDGET_REALIZED(drwarea_cnl_r)) {
-    gdk_window_set_background(drwarea_cnl_r->window, &color);
-    gdk_window_clear(drwarea_cnl_r->window);
-  }
-*/
 }
 
 static void dflower_render_pcm(gint16 data[2][512]) {
@@ -341,19 +309,12 @@ static void dflower_render_pcm(gint16 data[2][512]) {
   gint16 rx, ry, lx, ly;
   gint16 *rd, *ld;
   gfloat r, l;
-  //GdkColor color;
   gfloat *psin,*pcos;
 
   if (!window) return;
 
-  //gdk_color_black(gdk_colormap_get_system(),&color);
-  //gdk_gc_set_foreground(gc, &color);
 
   GDK_THREADS_ENTER();
-  /* cleanup grafs */
-/*  gdk_draw_rectangle(pixmap_cnl_r, gc, TRUE, 0, 0, AWIDTH, AHEIGHT);
-  gdk_draw_rectangle(pixmap_cnl_l, gc, TRUE, 0, 0, AWIDTH, AHEIGHT);
-*/
   gdk_draw_pixmap(pixmap, gc, bg_pixmap,
 		  SIDE_BORDER, TOP_BORDER,
 		  SIDE_BORDER, TOP_BORDER,
@@ -363,20 +324,17 @@ static void dflower_render_pcm(gint16 data[2][512]) {
 		  WINWIDTH - SIDE_BORDER - AWIDTH, TOP_BORDER,
 		  AWIDTH, AHEIGHT);
   
-  //gdk_color_white(gdk_colormap_get_system(),&color);
-  //gdk_gc_set_foreground(gc, &color);
-
   psin = sinncos_table;
   pcos = sinncos_table + 128;
   ld = data[0];
   rd = data[1];
   for (i=0; i < 512; i++) {
     switch(Cfg.type) {
-    case 1: // abs reversed
+    case TYPE_REVABS: // abs reversed
       r = 1.0 - fabs((double) *rd) / 32768.0;
       l = 1.0 - fabs((double) *ld) / 32768.0;
       break;
-    case 2: // nonabs
+    case TYPE_NOABS: // nonabs
       r = 0.5 + (double) *rd / 65536.0;
       l = 0.5 + (double) *ld / 65536.0;
       break;
@@ -403,15 +361,15 @@ static void dflower_render_pcm(gint16 data[2][512]) {
 
 static void dflower_config_read () {
   ConfigFile *cfg;
-  gchar *filename, *themefile;
+  gchar *filename, *themefile = NULL;
 
   Cfg.pos_x = -1;
 
   filename = g_strconcat(g_get_home_dir(), "/.xmms/config", NULL);
-  if((cfg = xmms_cfg_open_file(filename)) != NULL) {
+  if ((cfg = xmms_cfg_open_file(filename)) != NULL) {
     xmms_cfg_read_int(cfg, CONFIG_SECTION, "type", &Cfg.type);
     xmms_cfg_read_string(cfg, CONFIG_SECTION, "skin_xpm", &themefile);
-    if(themefile)
+    if (themefile)
       Cfg.skin_xpm = g_strdup(themefile);
     xmms_cfg_read_int(cfg, CONFIG_SECTION, "pos_x", &Cfg.pos_x);
     xmms_cfg_read_int(cfg, CONFIG_SECTION, "pos_y", &Cfg.pos_y);
@@ -431,7 +389,7 @@ static void dflower_config_write () {
   if((cfg = xmms_cfg_open_file(filename)) != NULL) {
     xmms_cfg_write_int(cfg, CONFIG_SECTION, "type", Cfg.type);
     xmms_cfg_write_string(cfg, CONFIG_SECTION, "skin_xpm",
-			    (Cfg.skin_xpm != NULL)?Cfg.skin_xpm:"default");
+			    (Cfg.skin_xpm != NULL) ? Cfg.skin_xpm : THEME_DEFAULT_STR);
     xmms_cfg_write_int(cfg, CONFIG_SECTION, "pos_x", Cfg.pos_x);
     xmms_cfg_write_int(cfg, CONFIG_SECTION, "pos_y", Cfg.pos_y);
     xmms_cfg_write_file(cfg, filename);
@@ -450,12 +408,7 @@ static void on_btn_about_close_clicked (GtkButton *button, gpointer user_data) {
 /* ************************* */
 /* configwindow callbacks    */
 static void on_rdbtn_type_toggled(GtkToggleButton *togglebutton, gpointer user_data) {
-  if(gtk_toggle_button_get_active((GtkToggleButton *) rdbtn_nonabs))
-    Cfg.type = 2;
-  else if(gtk_toggle_button_get_active((GtkToggleButton *) rdbtn_revabs))
-    Cfg.type = 1;
-  else // normal
-    Cfg.type = 0;
+  Cfg.type = (int) user_data;
 }
 
 static void on_btn_snapmainwin_clicked (GtkButton *button, gpointer user_data) {
@@ -529,8 +482,8 @@ static void dflower_about (void) {
 
   lbl_author = gtk_label_new ("plugin for XMMS\n"
 			      "made by Joakim Elofsson\n"
-			      "joakime@hem.passagen.se\n"
-			      "   http://hem.passagen.se/joakime/index.html   ");
+			      "joakim.elofsson@home.se\n"
+			      "   http://www.shell.linux.se/bm/  ");
   gtk_container_add (GTK_CONTAINER (frm), lbl_author);
   gtk_widget_show (lbl_author);
 
@@ -546,79 +499,7 @@ static void dflower_about (void) {
 
 }
 
-/*
-static void dflower_about (void) {
-  GtkWidget *vb_main;
-  GtkWidget *fixed;
-  GtkWidget *vp;
-  GtkWidget *fixed2;
-  GtkWidget *lbl_title;
-  GtkWidget *lbl_author;
-  GtkWidget *btn_about_close;
-  GdkColor color;
-  GdkGC *gc;
 
-  if(win_about)
-    return;
-
-  win_about = gtk_window_new (GTK_WINDOW_DIALOG);
-  gtk_widget_realize(win_about);
-  gtk_window_set_title (GTK_WINDOW (win_about), "About");
-  gtk_signal_connect(GTK_OBJECT(win_about), "destroy", 
-		     GTK_SIGNAL_FUNC (gtk_widget_destroyed),
-		     &win_about);
-
-  vb_main = gtk_vbox_new (FALSE, 0);
-  gtk_widget_show (vb_main);
-  gtk_container_add (GTK_CONTAINER (win_about), vb_main);
-
-  fixed = gtk_fixed_new ();
-  gtk_widget_show (fixed);
-  gtk_box_pack_start (GTK_BOX (vb_main), fixed, TRUE, TRUE, 0);
-  gtk_widget_set_usize (fixed, 200, 128);
-
-  vp = gtk_viewport_new (NULL, NULL);
-  gtk_widget_show (vp);
-  gtk_fixed_put (GTK_FIXED (fixed), vp, 8, 8);
-  gtk_widget_set_uposition (vp, 8, 8);
-  gtk_widget_set_usize (vp, 184, 114);
-  gtk_container_set_border_width (GTK_CONTAINER (vp), 3);
-
-  fixed2 = gtk_fixed_new ();
-  gtk_widget_show (fixed2);
-  gtk_container_add (GTK_CONTAINER (vp), fixed2);
-
-  gdk_color_white(gdk_colormap_get_system(), &color);
-  gc=gdk_gc_new(win_about->window);
-  gdk_gc_set_background(gc, &color);
-  gdk_window_set_background(fixed2->window, &color);
-  gdk_gc_destroy(gc);
-  lbl_title = gtk_label_new (THIS_IS);
-  gtk_widget_show (lbl_title);
-  gtk_fixed_put (GTK_FIXED (fixed2), lbl_title, 8, 8);
-  gtk_widget_set_uposition (lbl_title, 8, 8);
-  gtk_widget_set_usize (lbl_title, 160, 24);
-
-  lbl_author = gtk_label_new ("plugin for XMMS\n"
-			      "made by Joakim Elofsson\n"
-			      "joakime@hem.passagen.se\n"
-			      "http://http2.com/basemetal");
-  gtk_widget_show (lbl_author);
-  gtk_fixed_put (GTK_FIXED (fixed2), lbl_author, 8, 40);
-  gtk_widget_set_uposition (lbl_author, 8, 40);
-  gtk_widget_set_usize (lbl_author, 160, 60);
-
-  btn_about_close = gtk_button_new_with_label ("Close");
-  gtk_widget_show (btn_about_close);
-  gtk_box_pack_start (GTK_BOX (vb_main), btn_about_close, FALSE, FALSE, 0);
-
-  gtk_signal_connect (GTK_OBJECT (btn_about_close), "clicked",
-                      GTK_SIGNAL_FUNC (on_btn_about_close_clicked),
-                      GTK_OBJECT(win_about));
-
-  gtk_widget_show (win_about);
-}
-*/ 
 static void dflower_config (void) {
   GtkWidget *vb;
   GtkWidget *nb;
@@ -638,9 +519,9 @@ static void dflower_config (void) {
   GtkWidget *nblbl_misc;
   GtkWidget *btn_close;
 
-  if(win_conf) return;
+  if (win_conf) return;
 
-  if(Cfg.skin_xpm == NULL) /* if config never read */
+  if (Cfg.skin_xpm == NULL) /* if config never read */
     dflower_config_read ();  
 
   win_conf = gtk_window_new (GTK_WINDOW_TOPLEVEL);
@@ -722,7 +603,8 @@ static void dflower_config (void) {
   gtk_widget_show (etry_theme);
   gtk_box_pack_start (GTK_BOX (hb_theme), etry_theme, TRUE, TRUE, 0);
   gtk_entry_set_editable (GTK_ENTRY (etry_theme), TRUE);
-  gtk_entry_set_text((GtkEntry *) etry_theme, Cfg.skin_xpm);
+  gtk_entry_set_text((GtkEntry *) etry_theme,
+		     Cfg.skin_xpm ? Cfg.skin_xpm : THEME_DEFAULT_STR);
 
   btn_theme = gtk_button_new_with_label ("Choose Theme");
   gtk_widget_show (btn_theme);
@@ -740,13 +622,13 @@ static void dflower_config (void) {
 		      NULL);
   gtk_signal_connect (GTK_OBJECT (rdbtn_nonabs), "clicked",
                       GTK_SIGNAL_FUNC (on_rdbtn_type_toggled),
-                      NULL);
+                      (gpointer) TYPE_NOABS);
   gtk_signal_connect (GTK_OBJECT (rdbtn_revabs), "clicked",
                       GTK_SIGNAL_FUNC (on_rdbtn_type_toggled),
-                      NULL);
+                      (gpointer) TYPE_REVABS);
   gtk_signal_connect (GTK_OBJECT (btn_close), "clicked",
                       GTK_SIGNAL_FUNC (on_confbtn_close_clicked),
-                      NULL);
+                      (gpointer) TYPE_ABS);
   gtk_signal_connect (GTK_OBJECT (ckbtn_rcoords), "toggled",
                       GTK_SIGNAL_FUNC (on_ckbtn_rcoords_toggled),
                       NULL);
@@ -783,21 +665,16 @@ void create_fileselection (void) {
   gchar *themefile = NULL;
 
   fsel = gtk_file_selection_new ("Choose Theme");
-  //gtk_object_set_data (GTK_OBJECT (fsel), "fsel", fsel);
   gtk_container_set_border_width (GTK_CONTAINER (fsel), 5);
 
   btn_fsel_ok = GTK_FILE_SELECTION (fsel)->ok_button;
-  //gtk_object_set_data (GTK_OBJECT (fsel), "btn_fsel_ok", btn_fsel_ok);
   gtk_widget_show (btn_fsel_ok);
   GTK_WIDGET_SET_FLAGS (btn_fsel_ok, GTK_CAN_DEFAULT);
 
   btn_fsel_cancel = GTK_FILE_SELECTION (fsel)->cancel_button;
-  //gtk_object_set_data (GTK_OBJECT (fsel), "btn_fsel_cancel", btn_fsel_cancel);
   gtk_widget_show (btn_fsel_cancel);
   GTK_WIDGET_SET_FLAGS (btn_fsel_cancel, GTK_CAN_DEFAULT);
-/*  if(Cfg.skin_xpm)
-    gtk_file_selection_set_filename((GtkFileSelection *) fsel, Cfg.skin_xpm);
-*/
+
 #ifndef FSEL_ALWAYS_DEFAULT_PATH
   themefile = Cfg.skin_xpm;
   if (!themefile && (strcmp(Cfg.skin_xpm, THEME_DEFAULT_STR) == 0))
@@ -816,8 +693,6 @@ void create_fileselection (void) {
 		      NULL);
 }
 
-static GtkWidget *item_follow;
-
 void on_item_close_activate(GtkMenuItem *menuitem, gpointer data)
 {
   dflower_vp.disable_plugin(&dflower_vp);
@@ -831,14 +706,6 @@ void on_item_about_activate(GtkMenuItem *menuitem, gpointer data)
 void on_item_conf_activate(GtkMenuItem *menuitem, gpointer data)
 {
   dflower_config();
-}
-
-void on_item_follow_activate(GtkCheckMenuItem *item, gpointer data)
-{
-  if(!g_list_find(dock_window_list, window)) {
-    dock_add_window(dock_window_list, window);
-    gtk_widget_hide(item_follow);
-  }
 }
 
 GtkWidget* dflower_create_menu(void)
@@ -863,10 +730,6 @@ GtkWidget* dflower_create_menu(void)
   gtk_container_add (GTK_CONTAINER(menu), sep);
   gtk_widget_set_sensitive(sep, FALSE);
 
-  item_follow = gtk_menu_item_new_with_label("Add to XMMS window dock list");
-  gtk_widget_show(item_follow);
-  gtk_container_add(GTK_CONTAINER(menu), item_follow);
-
   item_conf = gtk_menu_item_new_with_label("Config");
   gtk_widget_show(item_conf);
   gtk_container_add (GTK_CONTAINER(menu), item_conf);
@@ -884,8 +747,6 @@ GtkWidget* dflower_create_menu(void)
   gtk_signal_connect(GTK_OBJECT(item_conf), "activate",
 		     GTK_SIGNAL_FUNC(on_item_conf_activate), NULL);
 
-  gtk_signal_connect(GTK_OBJECT(item_follow), "activate",
-		     GTK_SIGNAL_FUNC(on_item_follow_activate), NULL);
 
   return menu;
 }
