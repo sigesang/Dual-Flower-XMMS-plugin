@@ -587,7 +587,7 @@ static void dflower_config (void) {
   gtk_widget_show (btn_snapmainwin);
   gtk_box_pack_start (GTK_BOX (vbox3), btn_snapmainwin, FALSE, FALSE, 0);
 
-  ckbtn_rcoords = gtk_check_button_new_with_label ("Remember possiton");
+  ckbtn_rcoords = gtk_check_button_new_with_label ("Remember position");
   gtk_widget_show (ckbtn_rcoords);
   gtk_box_pack_start (GTK_BOX (vbox3), ckbtn_rcoords, FALSE, FALSE, 0);
 
