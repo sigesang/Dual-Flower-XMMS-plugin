@@ -1,0 +1,50 @@
+Dual Flower - plugin for XMMS
+by Joakim Elofsson 1999
+
+REQUIERMENTS:
+	working XMMS  (X, gtk+, pthreads... etc)
+	<http://www.xmms.org>
+
+BUILD:
+	included binary was build on an linux-ix86-glibc2.2.3 system
+	
+	to build, do:
+	make
+
+	if you want you may change OPT in Makefile etc.
+
+INSTALL:
+	try  make install  as root (or  su -c 'make install')
+
+	will install plugin in xmms plugindirs and themes in
+	themedir (in xmms datadir)
+	
+	(if you have no root access, it's probably possible installing this
+	in your ~/.xmms dir, if so.. you must edit XMMS_DATADIR &
+	INSTALL-DIR in Makefile, and recompile)
+
+USE:
+	activate it in XMMS Vis-plugin-config
+        ...
+ 
+  skins
+   are 277x145 sized xpm, the first 275 columns is the background
+   and the toppixel of the last one sets the graphcolor
+
+ included skins (made by me)
+  bg_xmms.xpm   - the one in the .so, made to look like default xmms-skin
+
+  bg_blueheart.xpm - by loneowl at ritalin.shout.net
+
+possibel TODOs (not planned)
+  * better follow XMMS-mainwindow
+  * more advanced skins
+  * more modes (?)
+
+
+---------------------------------------------------------------
+  comments, feedback etc: joakime.elofsson@home.se
+  screenshot,download etc will come up here:
+                        http://hem.passagen.se/joakime/linuxapp.html
+
+/ Joakim Elofsson (basemetal) 2001-07-20
