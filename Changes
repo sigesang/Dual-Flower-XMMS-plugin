@@ -1,3 +1,7 @@
+1.2 -> 1.2.1
+added xmms-docklist handling (requires xmms 1.2.5+)
+crash if empty config
+
 1.0 -> 1.2
 now uses a default themedirectory
 added menus, movearoundhanling

@@ -1,12 +1,12 @@
 Dual Flower - plugin for XMMS
-by Joakim Elofsson 1999
+by Joakim Elofsson 2002
 
 REQUIERMENTS:
 	working XMMS  (X, gtk+, pthreads... etc)
 	<http://www.xmms.org>
 
 BUILD:
-	included binary was build on an linux-ix86-glibc2.2.3 system
+	included binary was build on an linux-ix86-glibc2.2.5 system
 	
 	to build, do:
 	make
@@ -45,6 +45,6 @@ possibel TODOs (not planned)
 ---------------------------------------------------------------
   comments, feedback etc: joakime.elofsson@home.se
   screenshot,download etc will come up here:
-                        http://hem.passagen.se/joakime/linuxapp.html
+                        http://www.shell.linux.se/bm/
 
-/ Joakim Elofsson (basemetal) 2001-07-20
+/ Joakim Elofsson (basemetal) 2002-11-09
